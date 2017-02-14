@@ -1,8 +1,12 @@
 #install.packages("jsonlite")
 #install.packages("dplyr")
+#install.packages("ggplot2")
+#install.packages("ggmap")
 
 library(jsonlite)
 library(dplyr)
+library(ggplot2)
+library(ggmap)
 
 setwd("/Users/achoudh3/Desktop/")
 data <- read_json("train.json", simplifyVector = TRUE)
@@ -28,4 +32,16 @@ for (i in 1:nrow(df)) {
     features <- union(features, features.current)
   }
 }
+
+# Plot map of locations
+# Extract (long, lat) location vectors
+locations <- cbind(unlist(df$longitude), unlist(df$latitude))
+locations <- as.data.frame(locations)
+names(locations) <- c("Long", "Lat")
+qmplot(Long, Lat, data=locations, colour=I('red'), size=I(1))
+#qmplot(Long, Lat, data=locations, colour=I('red'), size=I(5), source="google", maptype="roadmap")
+
+## Notice some outliers near Africa and on the U.S. West coast, and some in the central U.S.
+## Restrict locations to near NY using clustering
+## Let K-mean extract the NY cluster
 
