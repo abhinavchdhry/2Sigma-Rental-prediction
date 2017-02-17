@@ -32,6 +32,9 @@ def send_request(header, _type):
 _place_types = ["subway_station", "transit_station", "train_station", "bus_station", "taxi_stand", "shopping_mall", "restaurant", "convenience_store", "department_store", "park", "night_club", "bar", "airport", "atm", "university"]
 
 content = []
+count = 0
+outfile = open("data.json", "w")
+
 for key in lat:
 	print("Key: " + str(key) + "...")
 	loc = str(lat[key]) + "," + str(lon[key])
@@ -43,3 +46,11 @@ for key in lat:
 		_place_listings[_type] = out
 	content.append({ key : _place_listings })
 	print("...Done")
+	
+	if count % 500 == 0:
+		print("Dumping to file...")
+		for entity in content:
+			json.dump(entity, outfile)
+			outfile.write("\n")
+		content = []
+		print("Done.")
