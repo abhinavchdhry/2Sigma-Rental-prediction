@@ -8,11 +8,21 @@ header = {
 	"rankby" : "distance"
 }
 
-f = open("train.json", "r")
-data = json.load(f)
+#f = open("train.json", "r")
+#data = json.load(f)
+f = open("location0.data", "r")
+data = []
+for line in f:
+	data.append([x.strip() for x in line.split(",")])
 
-lat = data["latitude"]
-lon = data["longitude"]
+lat = []
+lon = []
+
+lat = [float(x[1]) for x in data]
+lon = [float(x[2]) for x in data]
+
+#lat = data["latitude"]
+#lon = data["longitude"]
 
 # Data we need:
 # ** Nearest dist. to convenience store/department store
@@ -33,7 +43,7 @@ def haversine(lon1, lat1, lon2, lat2):
     """
     # convert decimal degrees to radians 
     lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
-
+ 
     # haversine formula 
     dlon = lon2 - lon1 
     dlat = lat2 - lat1 
@@ -47,8 +57,9 @@ def send_request(header, _type):
 	header["type"] = _type
 	for param in header:
 		baseURL = baseURL + param + "=" + header[param] + "&"
+#	print("QUERY: " + baseURL)
 	response = urllib2.urlopen(baseURL).read()
-	results = json.loads(response)["results"]
+	results = json.loads(response)
 	filtered = []
 	if "results" in results:
 		results = results["results"]
@@ -56,66 +67,116 @@ def send_request(header, _type):
 			d = {}
 			d["location"] = res["geometry"]["location"]
 			d["name"] = res["name"]
-			d["rating"] = res["rating"] if "rating" in res else None
-			d["types"] = res["types"] if "types" in res else None
+			d["id"] = res["id"]
+			if "rating" in res:
+				d["rating"] = res["rating"]
+			if "types" in res:
+				d["types"] = res["types"]
 			filtered.append(d)
 	return(filtered)
 
-_place_types = ["subway_station", "transit_station", "train_station", "bus_station", "taxi_stand", "shopping_mall", "restaurant", "convenience_store", "department_store", "park", "night_club", "bar", "airport", "atm", "university"]
-
 content = []
 count = 0
-outfile = open("data.json", "w")
+outfile = open("data0.json", "w")
 
-for key in lat:
-	print("Key: " + str(key) + "...")
-	loc = str(lat[key]) + "," + str(lon[key])
+for i in range(0,len(data)):
+	key = data[i][0]
+	print("Key: " + str(key) + "done = " + str(count) + "...")
+	loc = str(lat[i]) + "," + str(lon[i])
 	header["location"] = loc
 	neighborhood = {}		# A directory for neighborhood information
+
+#	print("Location: " + loc)
 
 	nearest_transit = 50
 	for _type in ["subway_station", "transit_station", "train_station", "bus_station"]:
 		out = send_request(header, _type)
+#		print("OutLen = " + str(len(out)))
 		if len(out) > 0:
 			nearest = out[0]
-			current.lon = nearest["geometry"]["location"]["lng"]
-			current.lat = nearest["geometry"]["location"]["lat"]
-			nearest.dist = haversine(lon[key], lat[key], current.lon, current.lat)
-			if nearest.dist < nearest_transit:
-				nearest_transit = nearest.dist
+			current_lon = nearest["location"]["lng"]
+			current_lat = nearest["location"]["lat"]
+			nearest_dist = haversine(lon[i], lat[i], current_lon, current_lat)
+#			print("HAVERSINE: " + str(nearest_dist))
+			if nearest_dist < nearest_transit:
+				nearest_transit = nearest_dist
 	neighborhood["nearest_transit"] = nearest_transit if nearest_transit < 50 else None
+#	print("Nearest transit: " + str(nearest_transit))
 
-	for _place in ["shopping_mall", "airport", "university"]:
+	for _place in ["shopping_mall", "university"]:
 		out = send_request(header, _place)
-		nearest.dist = 50
+		nearest_dist = 50
 		if len(out) > 0:
 			nearest = out[0]
-			current.lon = nearest["geometry"]["location"]["lng"]
-			current.lat = nearest["geometry"]["location"]["lat"]
-			nearest.dist = haversine(lon[key], lat[key], current.lon, current.lat)
-		neighborhood["nearest_" + _place] = nearest.dist if nearest.dist < 50 else None
+			current_lon = nearest["location"]["lng"]
+			current_lat = nearest["location"]["lat"]
+			nearest_dist = haversine(lon[i], lat[i], current_lon, current_lat)
+		neighborhood["nearest_" + _place] = nearest_dist if nearest_dist < 50 else None
 
 	nearest_transit = 50
         for _type in ["convenience_store", "department_store"]:
                 out = send_request(header, _type)
                 if len(out) > 0:
                         nearest = out[0]
-                        current.lon = nearest["geometry"]["location"]["lng"]
-                        current.lat = nearest["geometry"]["location"]["lat"]
-                        nearest.dist = haversine(lon[key], lat[key], current.lon, current.lat)
-                        if nearest.dist < nearest_transit:
-                                nearest_transit = nearest.dist
+                        current_lon = nearest["location"]["lng"]
+                        current_lat = nearest["location"]["lat"]
+                        nearest_dist = haversine(lon[i], lat[i], current_lon, current_lat)
+                        if nearest_dist < nearest_transit:
+                                nearest_transit = nearest_dist
         neighborhood["nearest_store"] = nearest_transit if nearest_transit < 50 else None
 
-	del header["rankby"]
-	header["radius"] = "1000"
+#	del header["rankby"]
+#	header["radius"] = "1000"
 	# TODO: Now compute average rating for restaurants, clubs, bars, etc in 1 km radius
+	out = send_request(header, "night_club")
+	night_clubs_nearby = len(out)
+        sum_of_ratings = 0.0
+        clubs_with_ratings = 0
+	if night_clubs_nearby > 0:
+		for night_club in out:
+			if "rating" in night_club:
+				sum_of_ratings += night_club["rating"]
+				clubs_with_ratings += 1
+	avg_club_rating = None if clubs_with_ratings == 0 else (sum_of_ratings/float(clubs_with_ratings))
+	neighborhood["night_clubs_nearby"] = night_clubs_nearby
+	neighborhood["avg_club_rating"] = avg_club_rating
+	neighborhood["clubs_with_no_rating"] = night_clubs_nearby - clubs_with_ratings
+	
 
+	barsAndRestos = send_request(header, "bar") + send_request(header, "restaurant")
+	barDirectory = {}
+	for bar in barsAndRestos:
+		barDirectory[bar["id"]] = bar
+	ids = barDirectory.keys()
+
+#	barDirectory = [{bar["id"].encode('ascii', 'ignore'):bar} for bar in barsAndRestos]
+#	ids = [bar["id"].encode('ascii', 'ignore') for bar in barsAndRestos]
+#	ids = set(ids)
+	neighborhood["bars_nearby"] = len(ids)
+	sum_of_ratings = 0.0
+	bars_with_ratings = 0
+	for _id in ids:
+		bar = barDirectory[_id]
+		if "rating" in bar:
+			bars_with_ratings += 1
+			sum_of_ratings += bar["rating"]
+	neighborhood["avg_bar_rating"] = None if bars_with_ratings == 0 else (sum_of_ratings/float(bars_with_ratings))
+	neighborhood["bars_with_no_rating"] = len(ids) - bars_with_ratings
+
+	# Compute distance to 3 major NY airports: JFK, LAG and NAL
+	JFKloc = [40.6413, -73.7781]
+	LAGloc = [40.7769, -73.8740]
+	NALloc = [40.6895, -74.1745]
+
+	neighborhood["dist_to_JFK"] = haversine(lon[i], lat[i], JFKloc[1], JFKloc[0])
+	neighborhood["dist_to_LAG"] = haversine(lon[i], lat[i], LAGloc[1], LAGloc[0])
+	neighborhood["dist_to_NAL"] = haversine(lon[i], lat[i], NALloc[1], NALloc[0])
+
+#	print(neighborhood)
 	content.append({ key : neighborhood })
-#	print("...Done")
 	count += 1
-
-	if count % 200 == 0:
+	
+	if count % 100 == 0:
 		print("Dumping to file...")
 		for entity in content:
 			json.dump(entity, outfile)
