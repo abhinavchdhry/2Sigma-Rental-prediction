@@ -10,7 +10,7 @@ header = {
 
 #f = open("train.json", "r")
 #data = json.load(f)
-f = open("location0.data", "r")
+f = open("location3.data", "r")
 data = []
 for line in f:
 	data.append([x.strip() for x in line.split(",")])
@@ -77,7 +77,7 @@ def send_request(header, _type):
 
 content = []
 count = 0
-outfile = open("data0.json", "w")
+outfile = open("data3.json", "w")
 
 for i in range(0,len(data)):
 	key = data[i][0]
