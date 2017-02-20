@@ -3,14 +3,14 @@ import urllib2
 from math import radians, cos, sin, asin, sqrt
 
 header = {
-	"key" : "AIzaSyCcGLbzzfIm5USs_3GY3euooefdcs-qFGI",
+	"key" : "AIzaSyD-hquuOfPwqMwXT3_JQk8rx4VKbprfaZM",
 #	"radius" : "1000"
 	"rankby" : "distance"
 }
 
 #f = open("train.json", "r")
 #data = json.load(f)
-f = open("location4.data", "r")
+f = open("location0.data", "r")
 data = []
 for line in f:
 	data.append([x.strip() for x in line.split(",")])
@@ -77,9 +77,9 @@ def send_request(header, _type):
 
 content = []
 count = 0
-outfile = open("data4.json", "w")
+outfile = open("data0.json", "a")
 
-for i in range(0,len(data)):
+for i in range(2000,len(data)):
 	key = data[i][0]
 	print("Key: " + str(key) + "done = " + str(count) + "...")
 	loc = str(lat[i]) + "," + str(lon[i])
@@ -176,7 +176,7 @@ for i in range(0,len(data)):
 	content.append({ key : neighborhood })
 	count += 1
 	
-	if count % 100 == 0:
+	if count % 50 == 0:
 		print("Dumping to file...")
 		for entity in content:
 			json.dump(entity, outfile)
