@@ -6,12 +6,29 @@ import json
 from random import sample
 from sklearn.linear_model import LogisticRegression as lr
 from sklearn.metrics import log_loss
+from sklearn.ensemble import RandomForestClassifier as rfc
+from sklearn.neural_network import MLPClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.ensemble import AdaBoostClassifier
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 
 #_testcase = sys.argv[1]
 
 print("Loading data...")
 with open("train.json", "r") as f:
 	d = json.load(f)
+
+# Different classifiers to try out
+classifiers = [
+	{"LogRegression" : lr()},
+	{"LogRegressionL2" : lr(penalty='l2', solver='sag')},
+	{"RFC20" : rfc(n_estimators=20)},
+	{"MLPClassifier" : MLPClassifier(hidden_layer_sizes=(100,100,))},
+	{"GaussianNB" : GaussianNB()},
+	{"QDA" : QuadraticDiscriminantAnalysis()},
+	{"Adaboost" : AdaBoostClassifier()}
+	]
 
 ### PART 1: Extract Doc2Vec features and represent description using that feature vector
 def desc2vector(d):
@@ -78,6 +95,8 @@ images = [len(images[key]) for key in images]
 interest = d["interest_level"]
 interest = [interest[key] for key in interest]
 
+#df = {"price" : price, "bedrooms":bedrooms, "bathrooms":bathrooms, "images":images, "interest":interest }
+#df = pd.DataFrame(df)
 df["price"] = price
 df["bedrooms"] = bedrooms
 df["bathrooms"] = bathrooms
@@ -91,25 +110,33 @@ N = df.shape[0]
 iters = 5
 
 print("### Model training and cross validation...")
-for i in range(iters):
-	print("Iteration " + str(i) + "...")
-	test_indices = sample(range(0, N), 10000)
-	train_indices = list(set(range(0, N)) - set(test_indices))
+for _model in classifiers:
+	_name = _model.keys()[0]
+	print("Current model: " + _name)
+	model = _model[_name]
+	log_loss_sum = 0
+	for i in range(iters):
+		print("Iteration " + str(i) + "...")
+		test_indices = sample(range(0, N), 10000)
+		train_indices = list(set(range(0, N)) - set(test_indices))
 
-	train = df.iloc[train_indices]
-	test = df.iloc[test_indices]
+		train = df.iloc[train_indices]
+		test = df.iloc[test_indices]
 
-	model = lr()	# Logistic regression model
-	cols = list(df)
-	cols.remove("interest")
+#		model = lr()	# Logistic regression model
+		cols = list(df)
+		cols.remove("interest")
 
-	print("Fitting model...")
-	model.fit(train[cols], np.reshape(train["interest"], -1))
+		print("Fitting model...")
+		model.fit(train[cols], np.reshape(train["interest"], -1))
 
-	actual = np.reshape(test["interest"], -1)
-	predicted = model.predict_proba(test[cols])
+		actual = np.reshape(test["interest"], -1)
+		predicted = model.predict_proba(test[cols])
 
-	print(pd.DataFrame(predicted).head(n=3))
+#		print(pd.DataFrame(predicted).head(n=3))
 
-	loss = log_loss(actual, predicted, labels=model.classes_)
-	print("Log loss: " + str(loss))
+		loss = log_loss(actual, predicted, labels=model.classes_)
+		log_loss_sum += loss
+		print("Log loss: " + str(loss))
+
+	print("Avg. log loss for " + _name + " classifier is: " + str(log_loss_sum/float(iters)))
