@@ -7,7 +7,7 @@ from random import sample
 from sklearn.linear_model import LogisticRegression as lr
 from sklearn.metrics import log_loss
 
-_testcase = sys.argv[1]
+#_testcase = sys.argv[1]
 
 print("Loading data...")
 with open("train.json", "r") as f:
@@ -25,7 +25,7 @@ def desc2vector(d):
 		t = TaggedDocument(words=words, tags=["SENT_" + str(i)])
 		tagged.append(t)
 
-# Train the Doc2Vec model
+	# Train the Doc2Vec model
 	numFeatures = 100
 	model = Doc2Vec(size=numFeatures, alpha= 0.025, min_alpha=0.025, window=8, min_count=5, workers=4)
 	print("Building vocab...")
@@ -43,12 +43,37 @@ def desc2vector(d):
 	df = pd.DataFrame(vecs, columns = ["F_" + str(i) for i in range(numFeatures)])
 	return(df)
 
-## PART 2: Construct the full DataFrame
+
+### PART 2: Merge the location data
+def mergeLocationData():
+	locationf = open("complete.json", "r")
+	data = []
+	for line in locationf:
+		entry = json.loads(line)
+		_inner = entry.values()[0]
+		temp = []
+		for key in _inner:
+			temp.append(0 if _inner[key] is None else _inner[key])
+		data.append(temp)
+
+	df = pd.DataFrame(data, columns=["unrated_bars", "dist2LAG", "unrated_clubs", "nearest_uni", "clubs_nearby", "nearest_store", "dist2JFK", "avg_club_rating", "nearest_mall", "avg_bar_rating", "dist2NAL", "bars_nearby", "nearest_transit"])
+	return(df)
+
+print("Reading the location data...")
+ldf = mergeLocationData()
+print(ldf.head(n=3))
+
+## PART 3: Construct the full DataFrame
 df = desc2vector(d)
+df[list(ldf)] = ldf
+
+print("Data frames merged...")
 
 price = [d["price"][key] for key in d["price"]]
 bedrooms = [d["bedrooms"][key] for key in d["bedrooms"]]
 bathrooms = [d["bathrooms"][key] for key in d["bathrooms"]]
+images = d["photos"]
+images = [len(images[key]) for key in images]
 
 interest = d["interest_level"]
 interest = [interest[key] for key in interest]
@@ -56,12 +81,13 @@ interest = [interest[key] for key in interest]
 df["price"] = price
 df["bedrooms"] = bedrooms
 df["bathrooms"] = bathrooms
+df["images"] = images
 df["interest"] = interest
 
 #descVsInterest = {"desc" : description, "interest" : interest }
 #descVsInterest = pd.DataFrame(descVsInterest)
 
-N = len(description)
+N = df.shape[0]
 iters = 5
 
 print("### Model training and cross validation...")
