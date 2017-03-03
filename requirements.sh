@@ -7,3 +7,6 @@ sudo pip install keras
 sudo pip install setuptools --upgrade
 sudo pip install bcolz
 sudo pip install --upgrade https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-1.0.0-cp27-none-linux_x86_64.whl
+sudo pip install --upgrade sklearn
+sudo pip install ipython
+sudo apt-get install python-h5py
