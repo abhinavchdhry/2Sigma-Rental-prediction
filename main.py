@@ -18,23 +18,23 @@ from sklearn import model_selection
 from scipy import sparse
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
-from sklearn.preprocessing import LabelEncoder
-import matplotlib.pyplot as plt
+from sklearn.preprocessing import LabelEncoder, normalize
 from sklearn.feature_selection import SelectKBest, chi2, SelectFromModel
 import datetime
 from itertools import product
+import lightgbm as lgb
 
 ### Argument check
 if (len(sys.argv) != 3):
 	print("""Usage: python main.py <text-vectorizer> <classifier>
-		--- classifier: can be one of [logreg, logregl2, xgboost, rfc, nn, nb, adboost, knn, qda]
+		--- classifier: can be one of [lgb, xgboost, logreg]
 		--- text-vectorizer: one of [cv, tfidf, nmf, LDA]""")
 	exit(0)
 
 _enableDV = 0
 _enableLoc = 0
-_classifier = sys.argv[4]
-_textvectorizer = sys.argv[3]
+_classifier = sys.argv[2]
+_textvectorizer = sys.argv[1]
 
 
 ### Different classifiers to try out
@@ -336,12 +336,28 @@ def runXGB(train_X, train_y, test_X, test_y=None, feature_names=None, seed_val=0
 
 ### Create a model based on _classifier
 def createAndRunModel(train_X, train_y, test_X, test_y=None):
+	print("### Training " + _classifier + " model...")
 	if _classifier == "xgboost":
 		preds, model = runXGB(train_X, train_y, test_X, test_y)
+
+	elif _classifier == "lgb":
+		model = lgb.LGBMClassifier(boosting_type='gbdt', objective='multiclass', num_leaves=60, max_depth=6, learning_rate=0.01, n_estimators=1000, subsample=1, colsample_bytree=1, reg_lambda=0)
+                model.fit(train_X, train_y, eval_set=[(test_X, test_y)], eval_metric='multi_logloss', early_stopping_rounds=20)
+                preds = model.predict_proba(test_X)
+
 	elif _classifier == "logreg":
-		model = LogisticRegression(penalty="l2")
+		train_df = pd.DataFrame(train_X)
+		train_df["train_Y"] = pd.Series(train_y, index=train_df.index)
+		train_df = train_df.replace([np.inf, -np.inf], np.nan).dropna(how='all').fillna(0)
+
+		train_Y = train_df["train_Y"].values
+		train_X = train_df.drop("train_Y", axis=1).values
+		model = lr()
 		model.fit(train_X, train_y)
+		
+		test_X = pd.DataFrame(test_X).replace([np.inf, -np.inf], np.nan).fillna(0).values
 		preds = model.predict_proba(test_X)
+
 	else:
 		model = classifiers[_classifier]
 		preds = None
@@ -399,6 +415,7 @@ prior_0, prior_1, prior_2 = df[["pred_0", "pred_1", "pred_2"]].mean()
 attributes = product(("building_id", "manager_id"), zip(("pred_1", "pred_2"), (prior_1, prior_2)))
 
 ### Training model
+print("### Running cross-validation...")
 cv_scores = []
 kf = model_selection.StratifiedKFold(5)
 best_model = None
@@ -407,8 +424,9 @@ for dev_index, val_index in kf.split(np.zeros(df.shape[0]), df['interest']):
 	for variable, (target, prior) in attributes:
 		hcc_encode(df.iloc[dev_index], df.iloc[val_index], variable, target, prior, k=5, r_k=None, update_df=df)
 		hcc_encode(df, dftest, variable, target, prior, k=5, r_k=None, update_df=None)
-	print(df[['hcc_manager_id_pred_1', 'hcc_manager_id_pred_2']])
-	print(dftest[['hcc_manager_id_pred_1', 'hcc_manager_id_pred_2']])
+	df.to_csv("df_csv.csv")
+#	print(df[['hcc_manager_id_pred_1', 'hcc_manager_id_pred_2']])
+#	print(dftest[['hcc_manager_id_pred_1', 'hcc_manager_id_pred_2']])
 	df = df.drop(['pred_0', 'pred_1', 'pred_2', 'manager_id', 'building_id'], axis=1)
 	dftest = dftest.drop(['manager_id', 'building_id'], axis=1)
 	train_XY = df.iloc[dev_index]
@@ -426,16 +444,22 @@ for dev_index, val_index in kf.split(np.zeros(df.shape[0]), df['interest']):
 	if best_model is None or log_loss(val_Y, preds) < best_score:
 		best_score = log_loss(val_Y, preds)
 		best_model = model
+	print("Current log_loss score: " + str(log_loss(val_Y, preds)))
 	break
 
-test_X = test_X.as_matrix()
-test_y = model.predict(xgb.DMatrix(test_X))
-test_y_df = pd.DataFrame({})
-test_y_df["listing_id"] = origListingIds
-test_y_df[["high", "medium", "low"]] = pd.DataFrame(test_y)
-print("### Writing output to CSV...")
-test_y_df.to_csv("output.csv", index=False)
-
+### Do not work on test data if not using lgb or xgboost
+if _classifier in ["xgboost", "lgb"]:
+	test_X = test_X.as_matrix()
+	if _classifier == "xgboost":
+		test_y = model.predict(xgb.DMatrix(test_X))
+	else:
+		test_y = model.predict_proba(test_X)
+	test_y_df = pd.DataFrame({})
+	test_y_df["listing_id"] = origListingIds
+	test_y_df[["high", "medium", "low"]] = pd.DataFrame(test_y)
+	print("### Writing output to CSV...")
+	test_y_df.to_csv("output.csv", index=False)
+	print("Done.")
 
 
 ## TEST REPORTS
