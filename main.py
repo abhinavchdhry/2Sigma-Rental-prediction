@@ -336,7 +336,7 @@ def runXGB(train_X, train_y, test_X, test_y=None, feature_names=None, seed_val=0
 
 ### Create a model based on _classifier
 def createAndRunModel(train_X, train_y, test_X, test_y=None):
-	print("### Training " + _classifier + " model...")
+	print("## Training " + _classifier + " model...")
 	if _classifier == "xgboost":
 		preds, model = runXGB(train_X, train_y, test_X, test_y)
 
@@ -420,13 +420,16 @@ cv_scores = []
 kf = model_selection.StratifiedKFold(5)
 best_model = None
 best_score = 1.0
+count = 0
+train_df = df
+test_df = dftest
 for dev_index, val_index in kf.split(np.zeros(df.shape[0]), df['interest']):
+	df = train_df
+	dftest = test_df
+	print("## Iteration: " + str(count+1))
 	for variable, (target, prior) in attributes:
 		hcc_encode(df.iloc[dev_index], df.iloc[val_index], variable, target, prior, k=5, r_k=None, update_df=df)
 		hcc_encode(df, dftest, variable, target, prior, k=5, r_k=None, update_df=None)
-	df.to_csv("df_csv.csv")
-#	print(df[['hcc_manager_id_pred_1', 'hcc_manager_id_pred_2']])
-#	print(dftest[['hcc_manager_id_pred_1', 'hcc_manager_id_pred_2']])
 	df = df.drop(['pred_0', 'pred_1', 'pred_2', 'manager_id', 'building_id'], axis=1)
 	dftest = dftest.drop(['manager_id', 'building_id'], axis=1)
 	train_XY = df.iloc[dev_index]
@@ -444,8 +447,10 @@ for dev_index, val_index in kf.split(np.zeros(df.shape[0]), df['interest']):
 	if best_model is None or log_loss(val_Y, preds) < best_score:
 		best_score = log_loss(val_Y, preds)
 		best_model = model
-	print("Current log_loss score: " + str(log_loss(val_Y, preds)))
-	break
+	count += 1
+	print("## log_loss score: " + str(log_loss(val_Y, preds)))
+
+print("### Best model has log_loss: " + str(best_score))
 
 ### Do not work on test data if not using lgb or xgboost
 if _classifier in ["xgboost", "lgb"]:
@@ -459,8 +464,9 @@ if _classifier in ["xgboost", "lgb"]:
 	test_y_df[["high", "medium", "low"]] = pd.DataFrame(test_y)
 	print("### Writing output to CSV...")
 	test_y_df.to_csv("output.csv", index=False)
-	print("Done.")
-
+	print("\nDone. Output written to 'output.csv'. Upload this file to competition submission page to get test log-loss.")
+else:
+	print("\nDone. Note that test predictions are not written if model is not lgb or xgboost.")
 
 ## TEST REPORTS
 ## Public leaderboard LogLoss ~ 0.7056 with early stopping at 100 iterations, max_depth = 7, tfidf n_features = 250
