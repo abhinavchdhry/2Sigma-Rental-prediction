@@ -24,7 +24,7 @@ from sklearn.feature_selection import SelectKBest, chi2, SelectFromModel
 import datetime
 from itertools import product
 
-#_testcase = sys.argv[1]
+### Argument check
 if (len(sys.argv) != 3):
 	print("""Usage: python main.py <text-vectorizer> <classifier>
 		--- classifier: can be one of [logreg, logregl2, xgboost, rfc, nn, nb, adboost, knn, qda]
@@ -36,7 +36,8 @@ _enableLoc = 0
 _classifier = sys.argv[4]
 _textvectorizer = sys.argv[3]
 
-# Different classifiers to try out
+
+### Different classifiers to try out
 classifiers = {
 	"logreg" : lr(),
 	"logregl2" : lr(penalty='l2', solver='sag'),
@@ -47,7 +48,9 @@ classifiers = {
 	"adboost" : AdaBoostClassifier()
 	}
 
-### PART 1: Extract Doc2Vec features and represent description using that feature vector
+########### List of function definitions, includes both used and experimental functions ###########
+
+### PART 1: Extract Doc2Vec features and represent description using that feature vector [UNUSED/EXPERIMENTAL]
 def desc2vector(d):
 	description = d["description"]
 	description = [description[key].encode('ascii', 'ignore') for key in description]
@@ -78,7 +81,7 @@ def desc2vector(d):
 	return(df, model)
 
 
-### PART 2: Merge the location data
+### PART 2: Merge the location data [UNUSED/EXPERIMENTAL]
 def mergeLocationData():
 	locationf = open("complete.json", "r")
 	data = []
@@ -98,8 +101,13 @@ if _enableLoc:
 	ldf = mergeLocationData()
 	print(ldf.head(n=3))
 
-## PART 2.5: Extract attributes from "features" vector (read from JSON file)
-def extractFeatures(dtrain, dtest, method="LDA", max_f=50, ntopics = 25):
+### Extracts attributes from "features" vector and "description" using one of the
+### following vectorization methods: tfidf, LDA, NMF, cv (countvectorizer/BoW)
+### Description is preprocessed by removing all non-alphabetic character
+### Elements in "features" vector are joined into one sentence
+### Finally the preprocessed "description" and the sentence are merged into a text blob
+### and sent to the vectorizer algorithm
+def extractTextFeatures(dtrain, dtest, method="tfidf", max_f=50, ntopics = 25):
 	train_features = [" ".join(dtrain["features"][key]) for key in dtrain["features"]]
 	test_features = [" ".join(dtest["features"][key]) for key in dtest["features"]]
 
@@ -143,22 +151,12 @@ def extractFeatures(dtrain, dtest, method="LDA", max_f=50, ntopics = 25):
 			test_out = lda.transform(test_cv)
 			return(train_out, test_out)
 
-## PART 3: Construct the full DataFrame
-print("Loading data...")
-with open("train.json", "r") as f:
-        d = json.load(f)
 
-with open("test.json", "r") as ftest:
-	dtest = json.load(ftest)
-
-if _enableDV:
-	df, doc2vec = desc2vector(d)
-	
-else:
-	df = pd.DataFrame({})
-	dftest = pd.DataFrame({})
-
-def appendDfCols(d, df, type):
+### Extracts the base attributes from the given dataset and their trivial combinations
+### Weekday, Month, Year, and Age are extracted from Date string
+### High-cardinality categorical variables are converted to integers using LabelEncoder()
+### For test data, original listing_ids are returned
+def appendBaseFeatures(d, df, type):
 	price = [d["price"][key] for key in d["price"]]
 	bedrooms = [d["bedrooms"][key] for key in d["bedrooms"]]
 	bathrooms = [d["bathrooms"][key] for key in d["bathrooms"]]
@@ -205,7 +203,6 @@ def appendDfCols(d, df, type):
 	df["latitude"] = latitude
 	df["longitude"] = longitude
 
-#	df["desc_wordcount"] = df["description"].apply(len)
 	df["pricePerBed"] = df['price'] / df['bedrooms']
 	df["pricePerBath"] = df['price'] / df['bathrooms']
 	df["pricePerRoom"] = df['price'] / (df['bedrooms'] + df['bathrooms'])
@@ -213,8 +210,6 @@ def appendDfCols(d, df, type):
 	df["bedBathDiff"] = df['bedrooms'] - df['bathrooms']
 	df["bedBathSum"] = df["bedrooms"] + df['bathrooms']
 	df["bedsPerc"] = df["bedrooms"] / (df['bedrooms'] + df['bathrooms'])
-
-	print(df.head(10))
 
 	if type == 'train':
 		df["interest"] = interest
@@ -240,6 +235,7 @@ def appendDfCols(d, df, type):
 	# Return the original listing_id strings. Need it for test set .csv listing_id column
 	return(listing_id)
 
+
 def factorize(df1, df2, column):
     ps = df1[column].append(df2[column])
     factors = pd.factorize(ps)[0]
@@ -248,19 +244,11 @@ def factorize(df1, df2, column):
     return df1, df2
 
 
-def designate_single_observations(df1, df2, column):
-    ps = df1[column].append(df2[column])
-    grouped = ps.groupby(ps).size().to_frame().rename(columns={0: "size"})
-    df1.loc[df1.join(grouped, on=column, how="left")["size"] <= 1, column] = -1
-    df2.loc[df2.join(grouped, on=column, how="left")["size"] <= 1, column] = -1
-    return df1, df2
-
-
+"""
+See "A Preprocessing Scheme for High-Cardinality Categorical Attributes in
+Classification and Prediction Problems" by Daniele Micci-Barreca
+"""
 def hcc_encode(train_df, test_df, variable, target, prior_prob, k, f=1, g=1, r_k=None, update_df=None):
-    """
-    See "A Preprocessing Scheme for High-Cardinality Categorical Attributes in
-    Classification and Prediction Problems" by Daniele Micci-Barreca
-    """
     hcc_name = "_".join(["hcc", variable, target])
 
     grouped = train_df.groupby(variable)[target].agg({"size": "size", "mean": "mean"})
@@ -275,46 +263,18 @@ def hcc_encode(train_df, test_df, variable, target, prior_prob, k, f=1, g=1, r_k
     update_df.update(df)
     return
 
-# Add a preprocessing pipeline for the data
-def preprocessDF(df, dftest):
-	# Remove outliers (lat, long) from the training data. In this case, whatever (lat, long) values lie far away from NY
+
+### Remove outliers (lat, long) from the training data. In this case, whatever (lat, long) values lie far away from NY
+### Some initial tests and plotting suggest valid data should have:
+### 40.0 <= latitude <= 42.0
+### -75.0 <= longitude <= -71.0 
+def filterOutliers(df, dftest):
 	df = df[(df['latitude'] >= 40.0) & (df['latitude'] <= 42.0) & (df['longitude'] <= -71.0) & (df['longitude'] >= -75.0) ]
 	return(df, dftest)
 
-def hcc_preprocess(df, df_valid, df_test):
-	# High cardinality categorical attribute tranformation
-	# "A Preprocessing Scheme for High-Cardinality Categorical Attributes in
-	# Classification and Prediction Problems" by Daniele Micci-Barreca
-	def lambda_func(n, k=5.0, f=1.0):
-		return(1.0 / (1 + math.exp( (k - n)/f )))
-	
-	hcc_attributes = ['manager_id', 'building_id', 'display_address', 'street_address']
-	
-	# Factorize the attributes first
-	print("### HCC encoding attributes...")
-	prior_table = df.groupby('interest').size().apply(lambda x: float(x)/float(df.shape[0]))
-	for col in hcc_attributes:
-		print("Attribute: " + col)
-		ni_table = df.groupby(col).size()
-		niY_table = df.groupby([col, 'interest']).size()
-	
-		for interest_level in ['low', 'medium', 'high']:
-			col_interest = df[col].apply(lambda x: (float(niY_table[(x, interest_level)] if (x, interest_level) in niY_table else 0.0)/float(ni_table[x]))*lambda_func(ni_table[x]) + prior_table[interest_level]*(1 - lambda_func(ni_table[x])))
-			df[col + "_" + interest_level] = col_interest
-			df_valid[col + "_" + interest_level] = df_valid[col].apply(lambda x: (float(niY_table[(x, interest_level)] if (x, interest_level) in niY_table else 0.0)/float(ni_table[x] if x in ni_table else 1))*lambda_func(ni_table[x] if x in ni_table else 0) + prior_table[interest_level]*(1 - lambda_func(ni_table[x] if x in ni_table else 0)))
-			df_test[col + "_" + interest_level] = df_test[col].apply(lambda x: (float(niY_table[(x, interest_level)] if (x, interest_level) in niY_table else 0.0)/float(ni_table[x] if x in ni_table else 1))*lambda_func(ni_table[x] if x in ni_table else 0) + prior_table[interest_level]*(1 - lambda_func(ni_table[x] if x in ni_table else 0)))
 
-	df = df.drop(hcc_attributes, axis=1)
-	df_valid = df_valid.drop(hcc_attributes, axis=1)
-	df_test = df_test.drop(hcc_attributes, axis=1)
-	return(df, df_valid, df_test)
-
-# Feature selection pipeline
+# Feature selection pipeline [UNUSED]
 def selectFeatures(dftrain, dftest):
-	print("Selecting best features...")
-	print("Input shape: ")
-	print(dftrain.shape)
-	print(dftest.shape)
 	trainY = dftrain["interest"]
 	trainX = dftrain.drop("interest", axis=1).as_matrix()
 	test = dftest.as_matrix()
@@ -344,71 +304,7 @@ def selectFeatures(dftrain, dftest):
 	print(test_new.shape)
 	return(train_new, test_new)
 
-appendDfCols(d, df, 'train')
-origListingIds = appendDfCols(dtest, dftest, 'test')
-
-### Append the extracted features
-print("Extracting features...")
-train_features, test_features = extractFeatures(d, dtest, method=_textvectorizer, max_f=250, ntopics=100)
-train_fcols = ["train_fcol_" + str(i) for i in range(0, train_features.shape[1])]
-test_fcols = ["test_fcol_" + str(i) for i in range(0, test_features.shape[1])]
-
-df_tr_f = pd.DataFrame(train_features)
-df_tr_f.columns = train_fcols
-
-df_te_f = pd.DataFrame(test_features)
-df_te_f.columns = test_fcols
-
-df = df.join(df_tr_f)
-dftest = dftest.join(df_te_f)
-
-# PREPROCESSING
-df, dftest = preprocessDF(df, dftest)
-
-for attr in ['manager_id', 'building_id', 'display_address', 'street_address']:
-	factorize(df, dftest, attr)
-
-N = df.shape[0]
-iters = 5
-
-print("### Model training and cross validation...")
-#classifiers = []
-#for _model in classifiers:
-
-
-if _classifier != "xgboost":
-#	_name = _model.keys()[0]
-#	print("Current model: " + _name)
-#	model = _model[_name]
-	model = classifiers[_classifier]
-	log_loss_sum = 0
-	for i in range(iters):
-		print("Iteration " + str(i) + "...")
-		test_indices = sample(range(0, N), 10000)
-		train_indices = list(set(range(0, N)) - set(test_indices))
-
-		train = df.iloc[train_indices]
-		test = df.iloc[test_indices]
-
-#		model = lr()	# Logistic regression model
-		cols = list(df)
-		cols.remove("interest")
-
-		print("Fitting model...")
-		model.fit(train[cols], np.reshape(train["interest"], -1))
-
-		actual = np.reshape(test["interest"], -1)
-		predicted = model.predict_proba(test[cols])
-
-#		print(pd.DataFrame(predicted).head(n=3))
-
-		loss = log_loss(actual, predicted, labels=model.classes_)
-		log_loss_sum += loss
-		print("Log loss: " + str(loss))
-
-	print("Avg. log loss is: " + str(log_loss_sum/float(iters)))
-
-
+### XGBoost model
 def runXGB(train_X, train_y, test_X, test_y=None, feature_names=None, seed_val=0, num_rounds=200):
 	param = {}
 	param['objective'] = 'multi:softprob'
@@ -438,50 +334,107 @@ def runXGB(train_X, train_y, test_X, test_y=None, feature_names=None, seed_val=0
 	pred_test_y = model.predict(xgtest)
 	return pred_test_y, model
 
+### Create a model based on _classifier
+def createAndRunModel(train_X, train_y, test_X, test_y=None):
+	if _classifier == "xgboost":
+		preds, model = runXGB(train_X, train_y, test_X, test_y)
+	elif _classifier == "logreg":
+		model = LogisticRegression(penalty="l2")
+		model.fit(train_X, train_y)
+		preds = model.predict_proba(test_X)
+	else:
+		model = classifiers[_classifier]
+		preds = None
+
+	return(preds, model)
+
+
+##### CODE #####
+## Construct the full DataFrame
+print("### Loading data from JSON files...")
+with open("train.json", "r") as f:
+        d = json.load(f)
+
+with open("test.json", "r") as ftest:
+	dtest = json.load(ftest)
+
+# Initialize empty data frames for training and test data
+df = pd.DataFrame({})
+dftest = pd.DataFrame({})
+
+# Append the base features to the train and test dataframes
+appendBaseFeatures(d, df, 'train')
+origListingIds = appendBaseFeatures(dtest, dftest, 'test')
+
+### Append the extracted features
+print("### Extracting text features, using " + _textvectorizer + "...")
+train_features, test_features = extractTextFeatures(d, dtest, method=_textvectorizer, max_f=250, ntopics=100)
+train_fcols = ["train_fcol_" + str(i) for i in range(0, train_features.shape[1])]
+test_fcols = ["test_fcol_" + str(i) for i in range(0, test_features.shape[1])]
+
+df_tr_f = pd.DataFrame(train_features)
+df_tr_f.columns = train_fcols
+
+df_te_f = pd.DataFrame(test_features)
+df_te_f.columns = test_fcols
+
+df = df.join(df_tr_f)
+dftest = dftest.join(df_te_f)
+
+### PREPROCESSING
+print("### Preprocessing...")
+df, dftest = filterOutliers(df, dftest)
+
+for attr in ['manager_id', 'building_id', 'display_address', 'street_address']:
+	factorize(df, dftest, attr)
+
+N = df.shape[0]
+iters = 5
+
+print("### Model training and cross validation...")
+
 df = df.replace({"interest": {"low": 0, "medium": 1, "high": 2}})
 df = df.join(pd.get_dummies(df["interest"], prefix="pred").astype(int))
 prior_0, prior_1, prior_2 = df[["pred_0", "pred_1", "pred_2"]].mean()
 attributes = product(("building_id", "manager_id"), zip(("pred_1", "pred_2"), (prior_1, prior_2)))
 
-# Training XGBoost model
-if _classifier == "xgboost":
-	print("### Training XGBoost...")
-	cv_scores = []
-	kf = model_selection.StratifiedKFold(5)
-	best_model = None
-	best_score = 1.0
-	for dev_index, val_index in kf.split(np.zeros(df.shape[0]), df['interest']):
-		for variable, (target, prior) in attributes:
-			hcc_encode(df.iloc[dev_index], df.iloc[val_index], variable, target, prior, k=5, r_k=None, update_df=df)
-			hcc_encode(df, dftest, variable, target, prior, k=5, r_k=None, update_df=None)
-		print(df[['hcc_manager_id_pred_1', 'hcc_manager_id_pred_2']])
-		print(dftest[['hcc_manager_id_pred_1', 'hcc_manager_id_pred_2']])
-		df = df.drop(['pred_0', 'pred_1', 'pred_2', 'manager_id', 'building_id'], axis=1)
-		dftest = dftest.drop(['manager_id', 'building_id'], axis=1)
-		train_XY = df.iloc[dev_index]
-		val_Y = df.iloc[val_index]['interest']
-		val_X = df.iloc[val_index].drop('interest', axis=1)
-		test_X = dftest
-		train_Y = train_XY['interest']
-		train_X = train_XY.drop('interest', axis=1)
-		train_X = train_X.as_matrix()
-		train_Y = np.array(train_Y)
-		val_X = val_X.as_matrix()
-		val_Y = np.array(val_Y)
+### Training model
+cv_scores = []
+kf = model_selection.StratifiedKFold(5)
+best_model = None
+best_score = 1.0
+for dev_index, val_index in kf.split(np.zeros(df.shape[0]), df['interest']):
+	for variable, (target, prior) in attributes:
+		hcc_encode(df.iloc[dev_index], df.iloc[val_index], variable, target, prior, k=5, r_k=None, update_df=df)
+		hcc_encode(df, dftest, variable, target, prior, k=5, r_k=None, update_df=None)
+	print(df[['hcc_manager_id_pred_1', 'hcc_manager_id_pred_2']])
+	print(dftest[['hcc_manager_id_pred_1', 'hcc_manager_id_pred_2']])
+	df = df.drop(['pred_0', 'pred_1', 'pred_2', 'manager_id', 'building_id'], axis=1)
+	dftest = dftest.drop(['manager_id', 'building_id'], axis=1)
+	train_XY = df.iloc[dev_index]
+	val_Y = df.iloc[val_index]['interest']
+	val_X = df.iloc[val_index].drop('interest', axis=1)
+	test_X = dftest
+	train_Y = train_XY['interest']
+	train_X = train_XY.drop('interest', axis=1)
+	train_X = train_X.as_matrix()
+	train_Y = np.array(train_Y)
+	val_X = val_X.as_matrix()
+	val_Y = np.array(val_Y)
 
-		preds, model = runXGB(train_X, train_Y, val_X, val_Y)
-		if best_model is None or log_loss(val_Y, preds) < best_score:
-			best_score = log_loss(val_Y, preds)
-			best_model = model
-		break
+	preds, model = createAndRunModel(train_X, train_Y, val_X, val_Y)
+	if best_model is None or log_loss(val_Y, preds) < best_score:
+		best_score = log_loss(val_Y, preds)
+		best_model = model
+	break
 
-	test_X = test_X.as_matrix()
-	test_y = model.predict(xgb.DMatrix(test_X))
-	test_y_df = pd.DataFrame({})
-	test_y_df["listing_id"] = origListingIds
-	test_y_df[["high", "medium", "low"]] = pd.DataFrame(test_y)
-	print("### Writing output to CSV...")
-	test_y_df.to_csv("output.csv", index=False)
+test_X = test_X.as_matrix()
+test_y = model.predict(xgb.DMatrix(test_X))
+test_y_df = pd.DataFrame({})
+test_y_df["listing_id"] = origListingIds
+test_y_df[["high", "medium", "low"]] = pd.DataFrame(test_y)
+print("### Writing output to CSV...")
+test_y_df.to_csv("output.csv", index=False)
 
 
 
