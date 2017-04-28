@@ -7,6 +7,7 @@ cd xgboost
 sudo make -j4
 cd python-package/
 sudo python setup.py install
+sudo apt-get install cmake
 git clone --recursive https://github.com/Microsoft/LightGBM
 cd LightGBM
 mkdir build
