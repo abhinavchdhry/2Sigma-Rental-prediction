@@ -1,3 +1,9 @@
+### Capstone project for CSC 591 (602): Algorithms for Data Guided Business Intelligence
+### Team:
+### Abhinav Choudhury (achoudh3)
+### Zubin Thampi (zsthampi)
+### Chekad Sarami (csarami)
+
 import sys
 import pandas as pd
 import numpy as np
