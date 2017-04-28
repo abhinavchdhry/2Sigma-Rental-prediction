@@ -25,16 +25,14 @@ import datetime
 from itertools import product
 
 #_testcase = sys.argv[1]
-if (len(sys.argv) != 5):
-	print("""Usage: python main.py <enable_description_vector> <enable_location_data> <text-vectorizer> <classifier>
+if (len(sys.argv) != 3):
+	print("""Usage: python main.py <text-vectorizer> <classifier>
 		--- classifier: can be one of [logreg, logregl2, xgboost, rfc, nn, nb, adboost, knn, qda]
-		--- enable_description_vector: 0/1 (enables feature extraction from description)
-		--- enable_location_data: 0/1 (enables location feature extraction)
 		--- text-vectorizer: one of [cv, tfidf, nmf, LDA]""")
 	exit(0)
 
-_enableDV = int(sys.argv[1])
-_enableLoc = int(sys.argv[2])
+_enableDV = 0
+_enableLoc = 0
 _classifier = sys.argv[4]
 _textvectorizer = sys.argv[3]
 
@@ -370,15 +368,6 @@ df, dftest = preprocessDF(df, dftest)
 for attr in ['manager_id', 'building_id', 'display_address', 'street_address']:
 	factorize(df, dftest, attr)
 
-#df = df.join(pd.get_dummies(df["interest"], prefix="pred").astype(int))
-#prior_0, prior_1, prior_2 = df[["pred_0", "pred_1", "pred_2"]].mean()
-
-#for col in ('building_id', 'manager_id', 'display_address'):
-#    df, dftest = designate_single_observations(df, dftest, col)
-
-# FEATURE SELECTION
-#df, dftest = selectFeatures(df, dftest)
-
 N = df.shape[0]
 iters = 5
 
@@ -419,17 +408,6 @@ if _classifier != "xgboost":
 
 	print("Avg. log loss is: " + str(log_loss_sum/float(iters)))
 
-
-#df_X = df.drop('interest', axis=1)
-#train_y = df['interest']
-
-#train_X = df_X.as_matrix()
-#target_num_map = {'high':0, 'medium':1, 'low':2}
-
-#train_y = train_y.apply(lambda x: target_num_map[x])
-#train_y = np.array(train_y)
-
-#test_X = dftest.as_matrix()
 
 def runXGB(train_X, train_y, test_X, test_y=None, feature_names=None, seed_val=0, num_rounds=200):
 	param = {}
@@ -481,25 +459,15 @@ if _classifier == "xgboost":
 		df = df.drop(['pred_0', 'pred_1', 'pred_2', 'manager_id', 'building_id'], axis=1)
 		dftest = dftest.drop(['manager_id', 'building_id'], axis=1)
 		train_XY = df.iloc[dev_index]
-#                print(train_XY[['manager_id', 'building_id', 'interest']].head(5))
- #               print(train_XY[['manager_id', 'building_id', 'interest']].tail(5))
 		val_Y = df.iloc[val_index]['interest']
 		val_X = df.iloc[val_index].drop('interest', axis=1)
-#		train_XY, val_X, test_X = hcc_preprocess(train_XY, val_X, dftest)
 		test_X = dftest
 		train_Y = train_XY['interest']
 		train_X = train_XY.drop('interest', axis=1)
-#		target_num_map = {'high':0, 'medium':1, 'low':2}
-#		train_Y = train_Y.apply(lambda x: target_num_map[x])
-#		val_Y = val_Y.apply(lambda x: target_num_map[x])
-	
-#		print("Train attributes: ")
-#		print(list(train_X))	
 		train_X = train_X.as_matrix()
 		train_Y = np.array(train_Y)
 		val_X = val_X.as_matrix()
 		val_Y = np.array(val_Y)
-#		test_X = test_X.as_matrix()
 
 		preds, model = runXGB(train_X, train_Y, val_X, val_Y)
 		if best_model is None or log_loss(val_Y, preds) < best_score:
@@ -507,13 +475,6 @@ if _classifier == "xgboost":
 			best_model = model
 		break
 
-#	attributes = product(("building_id", "manager_id", "display_address"), zip(("pred_1", "pred_2"), (prior_1, prior_2)))
-#	for variable, (target, prior) in attributes:
-#		hcc_encode(df, test_X, variable, target, prior, k=5, r_k=None, update_df=None)
-#	print("train attributes:")
-#	print(list(train_X))
-#	print("test attributes:")
-#	print(list(test_X))
 	test_X = test_X.as_matrix()
 	test_y = model.predict(xgb.DMatrix(test_X))
 	test_y_df = pd.DataFrame({})
